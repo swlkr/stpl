@@ -172,12 +172,12 @@ impl<'a, T: 'a + Renderer + ?Sized> Renderer for RawRenderer<'a, T> {
 /// You can impl it for your own types too. You usually compose it
 /// from many other `impl Render` data.
 pub trait Render {
-    fn render(&self, &mut Renderer) -> io::Result<()>;
+    fn render(&self, _: &mut dyn Renderer) -> io::Result<()>;
 }
 
 // {{{ impl Render
 impl<T: Render> Render for Vec<T> {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         for t in self.iter() {
             t.render(r)?;
         }
@@ -186,7 +186,7 @@ impl<T: Render> Render for Vec<T> {
 }
 
 impl<T: Render> Render for [T] {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         for t in self.iter() {
             t.render(r)?;
         }
@@ -197,7 +197,7 @@ impl<T: Render> Render for [T] {
 macro_rules! impl_narr {
     ($n:expr) => {
         impl<T: Render> Render for [T; $n] {
-            fn render(&self, r: &mut Renderer) -> io::Result<()> {
+            fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
                 for t in self.iter() {
                     t.render(r)?;
                 }
@@ -242,27 +242,27 @@ impl_narr!(31);
 impl_narr!(32);
 
 impl<'a, T: Render + ?Sized> Render for &'a mut T {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         (**self).render(r)?;
         Ok(())
     }
 }
 
 impl<T: Render + ?Sized> Render for Box<T> {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         (**self).render(r)?;
         Ok(())
     }
 }
 
 impl Render for () {
-    fn render(&self, _: &mut Renderer) -> io::Result<()> {
+    fn render(&self, _: &mut dyn Renderer) -> io::Result<()> {
         Ok(())
     }
 }
 
 impl<R: Render> Render for Option<R> {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         if let &Some(ref s) = self {
             s.render(r)?
         }
@@ -270,21 +270,22 @@ impl<R: Render> Render for Option<R> {
     }
 }
 impl Render for String {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
-        r.write_raw(self.as_bytes())
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
+        r.write_str(&self)
     }
 }
 
 macro_rules! impl_render_raw {
     ($t:ty) => {
         impl Render for $t {
-            fn render(&self, r: &mut Renderer) -> io::Result<()> {
+            fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
                 r.write_raw_fmt(&format_args!("{}", self))
             }
         }
     };
 }
 
+impl_render_raw!(u16);
 impl_render_raw!(f64);
 impl_render_raw!(f32);
 impl_render_raw!(i64);
@@ -295,19 +296,19 @@ impl_render_raw!(usize);
 impl_render_raw!(isize);
 
 impl<'a> Render for &'a str {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         r.write_str(self)
     }
 }
 
 impl<'a> Render for fmt::Arguments<'a> {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         r.write_fmt(self)
     }
 }
 
 impl<'a> Render for &'a fmt::Arguments<'a> {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         r.write_fmt(self)
     }
 }
@@ -316,7 +317,7 @@ impl<A> Render for (A,)
 where
     A: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)
     }
 }
@@ -326,7 +327,7 @@ where
     A: Render,
     B: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)?;
         self.1.render(r)
     }
@@ -338,7 +339,7 @@ where
     B: Render,
     C: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)?;
         self.1.render(r)?;
         self.2.render(r)
@@ -352,7 +353,7 @@ where
     C: Render,
     D: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)?;
         self.1.render(r)?;
         self.2.render(r)?;
@@ -367,7 +368,7 @@ where
     D: Render,
     E: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)?;
         self.1.render(r)?;
         self.2.render(r)?;
@@ -385,7 +386,7 @@ where
     E: Render,
     F: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)?;
         self.1.render(r)?;
         self.2.render(r)?;
@@ -405,7 +406,7 @@ where
     F: Render,
     G: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)?;
         self.1.render(r)?;
         self.2.render(r)?;
@@ -427,7 +428,7 @@ where
     G: Render,
     H: Render,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0.render(r)?;
         self.1.render(r)?;
         self.2.render(r)?;
@@ -445,9 +446,9 @@ pub struct Fn<F>(pub F);
 
 impl<F> Render for Fn<F>
 where
-    F: std::ops::Fn(&mut Renderer) -> io::Result<()>,
+    F: std::ops::Fn(&mut dyn Renderer) -> io::Result<()>,
 {
-    fn render(&self, r: &mut Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn Renderer) -> io::Result<()> {
         self.0(r)
     }
 }

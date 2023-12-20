@@ -66,7 +66,7 @@ pub struct FinalTag<I> {
 }
 
 impl Render for Tag {
-    fn render(&self, r: &mut super::Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn super::Renderer) -> io::Result<()> {
         r.write_raw_str("<")?;
         r.write_raw_str(&*self.tag)?;
         for &(ref k, ref v) in self.attrs.iter() {
@@ -87,7 +87,7 @@ impl Render for Tag {
 }
 
 impl Render for BareTag {
-    fn render(&self, r: &mut super::Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn super::Renderer) -> io::Result<()> {
         r.write_raw_str("<")?;
         r.write_raw_str(&*self.tag)?;
         r.write_raw_str(">")?;
@@ -98,7 +98,7 @@ impl Render for BareTag {
 }
 
 impl<I: Render> Render for FinalTag<I> {
-    fn render(&self, r: &mut super::Renderer) -> io::Result<()> {
+    fn render(&self, r: &mut dyn super::Renderer) -> io::Result<()> {
         r.write_raw_str("<")?;
         r.write_raw_str(&*self.tag)?;
         for &(ref k, ref v) in self.attrs.iter() {
@@ -121,10 +121,10 @@ impl<I: Render> Render for FinalTag<I> {
 
 macro_rules! impl_attr {
     ($t:ident) => {
-        pub fn $t<V : Into<CowStr>>(self, val: V) -> Tag {
+        pub fn $t<V: Into<CowStr>>(self, val: V) -> Tag {
             self.attr(stringify!($t), val)
         }
-    }
+    };
 }
 
 macro_rules! impl_attr1 {
@@ -132,15 +132,15 @@ macro_rules! impl_attr1 {
         pub fn $t(self) -> Tag {
             self.attr1(stringify!($t))
         }
-    }
+    };
 }
 
 macro_rules! impl_attr2 {
     ($t1:ident, $t2:expr) => {
-        pub fn $t1<V : Into<CowStr>>(self, val: V) -> Tag {
+        pub fn $t1<V: Into<CowStr>>(self, val: V) -> Tag {
             self.attr($t2, val)
         }
-    }
+    };
 }
 macro_rules! impl_attr_all {
     () => {
@@ -152,6 +152,7 @@ macro_rules! impl_attr_all {
         impl_attr!(href);
         impl_attr!(rel);
         impl_attr!(src);
+        impl_attr1!(defer);
         impl_attr!(integrity);
         impl_attr!(crossorigin);
         impl_attr!(role);
@@ -170,7 +171,7 @@ macro_rules! impl_attr_all {
         impl_attr1!(checked);
         impl_attr1!(enabled);
         impl_attr1!(disabled);
-        impl_attr2!(type_, "type");
+        impl_attr2!(r#type, "type");
         impl_attr2!(data_toggle, "data-toggle");
         impl_attr2!(data_target, "data-target");
         impl_attr2!(data_placement, "data-placement");
@@ -180,7 +181,7 @@ macro_rules! impl_attr_all {
         impl_attr2!(aria_haspopup, "aria-haspopup");
         impl_attr2!(aria_labelledby, "aria-labelledby");
         impl_attr2!(aria_current, "aria-current");
-        impl_attr2!(for_, "for");
+        impl_attr2!(r#for, "for");
     };
 }
 
@@ -188,18 +189,12 @@ impl Tag {
     pub fn attr<K: Into<CowStr>, V: Into<CowStr>>(self, key: K, val: V) -> Tag {
         let Tag { tag, mut attrs } = self;
         attrs.push((key.into(), Some(val.into())));
-        Tag {
-            tag: tag,
-            attrs: attrs,
-        }
+        Tag { tag, attrs }
     }
     pub fn attr1<K: Into<CowStr>>(self, key: K) -> Tag {
         let Tag { tag, mut attrs } = self;
         attrs.push((key.into(), None));
-        Tag {
-            tag: tag,
-            attrs: attrs,
-        }
+        Tag { tag, attrs }
     }
     impl_attr_all!();
 }
@@ -253,7 +248,7 @@ macro_rules! impl_tag {
 }
 
 pub fn doctype(t: &'static str) -> impl Render {
-    Fn(move |r: &mut super::Renderer| {
+    Fn(move |r: &mut dyn super::Renderer| {
         r.write_raw(b"<!DOCTYPE ")?;
         r.write_raw_str(t)?;
         r.write_raw(b">")
@@ -269,7 +264,7 @@ macro_rules! impl_esc {
         pub const $i: $t = $t;
 
         impl Render for $t {
-            fn render(&self, r: &mut super::Renderer) -> io::Result<()> {
+            fn render(&self, r: &mut dyn super::Renderer) -> io::Result<()> {
                 r.write_raw_str($s)
             }
         }
@@ -281,7 +276,7 @@ impl_esc!(lt, Lt, "&lt;");
 impl_esc!(gt, Gt, "&gt;");
 
 pub fn raw<T: Render>(x: T) -> impl Render {
-    Fn(move |r: &mut super::Renderer| x.render(&mut super::RawRenderer(r)))
+    Fn(move |r: &mut dyn super::Renderer| x.render(&mut super::RawRenderer(r)))
 }
 
 impl_tag!(html);
@@ -327,5 +322,48 @@ impl_tag!(tr);
 impl_tag!(td);
 impl_tag!(tbody);
 impl_tag!(textarea);
+impl_tag!(datalist);
+impl_tag!(option);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        let left = html(());
+        let right = "<html></html>".to_owned();
+        assert_eq!(left.render_to_string(), right);
+    }
+
+    #[test]
+    fn it_works_nested_escaped() {
+        let ex = "<script>alert('hello')</script>".to_owned();
+        let left = html((head(()), body(ex)));
+        let right =
+            "<html><head></head><body>&lt;script&gt;alert(&#x27;hello&#x27;)&lt;&#x2F;script&gt;</body></html>";
+        assert_eq!(left.render_to_string(), right.to_owned());
+    }
+
+    #[test]
+    fn it_works_semi_real_world() {
+        fn x(r: impl Render) -> String {
+            r.render_to_string()
+        }
+
+        let left = x((
+            doctype("html"),
+            html((
+                head((
+                    link.rel("stylesheet").href("tailwind.css"),
+                    script.src("htmx.js").defer(),
+                )),
+                body(h1.class("text-2xl")("hello world")),
+            )),
+        ));
+        let right = "<!DOCTYPE html><html><head><link rel=\"stylesheet\" href=\"tailwind.css\"></link><script src=\"htmx.js\" defer></script></head><body><h1 class=\"text-2xl\">hello world</h1></body></html>".to_owned();
+        assert_eq!(left, right);
+    }
+}
 
 // vim: foldmethod=marker foldmarker={{{,}}}
